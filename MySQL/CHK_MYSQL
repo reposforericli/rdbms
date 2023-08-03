@@ -1,0 +1,166 @@
+\?
+\!
+\s
+\h CREATE USER
+source file_name.sql == \. file_name
+
+--check import progress
+pv backup.sql | mysql -u x -pxx -h xx [database_name]
+
+--info
+select connection_id(), user(), database(), version(), now(), @@system_time_zone, @@binlog_format;
+
+--convert unix time
+select FROM_UNIXTIME(1535428800);
+
+--create dba user; 
+create user 'eli'@'%' identified by 'xxx'; 
+
+--lock user >10.4.2
+ALTER USER 'eli'@'%' ACCOUNT LOCK;
+
+--change password, for MariaDB >10.2.0
+ALTER USER 'eli'@'%' IDENTIFIED BY 'xxxx';
+
+--change password, for MariaDB <10.1.0
+SET PASSWORD FOR 'eli'@'%' = PASSWORD('xxxx');
+
+--grant permission
+grant all on *.* to 'eli'@'%' with grant option; 
+grant create on *.* TO 'eli'@'%' ;
+
+--revoke permission 
+revoke all privileges on *.* from 'eli'@'%'; 
+
+--rename table
+rename table xxxx to xxxx;
+alter table xxxx  rename to xxxx;
+
+--covert mysql.slow_log table
+SELECT CONVERT(sql_text USING utf8mb4) FROM mysql.slow_log LIMIT 1;
+
+--export slow log from table
+mysql -h xx -D mysql -s -r -e "SELECT CONCAT('# Time: ', DATE_FORMAT(start_time, '%y%m%d %H%i%s'), '\n', '# User@Host: ', user_host, '\n', '# Query_time: ', TIME_TO_SEC(query_time), ' Lock_time: ', TIME_TO_SEC(lock_time), ' Rows_sent: ', rows_sent, ' Rows_examined: ', rows_examined, '\n', CONVERT(sql_text USING utf8), ';') FROM mysql.slow_log LIMIT 10" > rds_slow_log.log
+
+--check super user
+select user from mysql.user where user not in ('root') and Super_priv='Y';
+
+--kill user
+mysql -e "select concat('KILL ', ID, ' ;') into outfile '/tmp/kill_session.sql' from information_schema.processlist where user not in ('system user', 'root');"
+mysql -e "source /tmp/kill_session.sql;"
+
+--purge binary logs
+purge binary logs to 'mysql_bin_log.000010';
+purge binary logs before '2018-08-10 10:10:00';
+purge binary logs before date_sub( now( ), interval 7 day);
+
+--MySQL pager
+pager egrep "Running|SQL_Error|Seconds_Behind_Master";
+show slave status\G
+
+pager grep Sleep | wc -l
+pager awk -F '|' '{print $6}' | sort | uniq -c | sort -r
+show full processlist;
+
+pager awk -F '|' '{print $3}' | sort | uniq -c | sort -r
+10.188.101.201
+
+--check session
+select id, user, host, db, command, time, state, info from information_schema.processlist where USER like '%geng%' and command not in ('Sleep');
+
+--Check tables size
+SELECT table_name AS 'Table_Name', ROUND(((data_length + index_length) / 1024 / 1024), 2) AS 'Size_MB' FROM information_schema.TABLES WHERE table_schema = database() ORDER BY (data_length + index_length) DESC;
+
+--check table create time
+SELECT table_schema, table_name, engine, create_time, update_time FROM information_schema.tables where TABLE_SCHEMA ='xxxx' name and table_type='BASE TABLE' order by create_time desc;
+
+--Check databases sizes
+SELECT table_schema AS 'Database_Name', ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'size_MB' FROM information_schema.TABLES GROUP BY table_schema;
+
+--check database info
+SELECT schema_name FROM information_schema.schemata where schema_name like '%xx%'; 
+
+--check table schema
+select table_schema, table_name, table_type, engine from information_schema.tables  where table_name = 'xxxx' and table_schema='xxxx';
+
+--check blob tables
+SELECT tab.table_schema AS database_name, tab.table_name, col.column_name, col.data_type
+FROM information_schema.tables AS tab INNER JOIN information_schema.columns AS col 
+ON col.table_schema = tab.table_schema AND col.table_name = tab.table_name
+WHERE tab.table_schema = 'xxxx' AND tab.table_type = 'BASE TABLE' AND col.data_type IN ('blob', 'mediumblob', 'longblob', 'text', 'mediumtext', 'longtext')
+ORDER BY tab.table_name, col.column_name;
+
+--check routines
+SELECT routine_name FROM information_schema.routines WHERE routine_type = 'PROCEDURE' AND routine_schema = 'xxxx';  
+SHOW PROCEDURE STATUS LIKE '%Order%'
+SHOW PROCEDURE STATUS WHERE db = 'classicmodels';
+
+--trigger
+select DEFINER, TRIGGER_SCHEMA, TRIGGER_NAME, ACTION_STATEMENT from information_schema.triggers where trigger_name='xxx'\G
+grant trigger on jlr_iag_custom_prod.* to 'jlr_iag_custom_prod'@'%' ;
+show create trigger xxx\G
+
+--calculating number of connection to MySQL
+mysql -NBe 'show global status like "Threads_connected";' | cut -f2
+--calculating number of connection from different host
+mysql -e"show processlist;"|awk '{print $3}'|awk -F":" '{print $1}'|sort|uniq -c
+
+--check current database procedure
+show procedure status where db = database() ;
+select db, name, type, definer, created, modified from mysql.proc where db = database() order by type, name;
+SELECT routine_schema, routine_type, routine_name, CREATED, LAST_ALTERED FROM information_schema.routines WHERE routine_type = 'PROCEDURE' AND routine_schema in ('svc_oauth','svc_iotconfig') ;
+
+--MariaDB flashback (cascade delete/update) CVNSNTCORM-1257838
+SELECT 
+    CONCAT(CONSTRAINT_SCHEMA, '.', TABLE_NAME) 'TABLE',
+    REFERENCED_TABLE_NAME 'REFERENCED_TABLE',
+    CONSTRAINT_NAME,
+    UPDATE_RULE,
+    DELETE_RULE
+FROM information_schema.REFERENTIAL_CONSTRAINTS
+WHERE DELETE_RULE = 'cascade' AND  CONSTRAINT_SCHEMA = 'test';
+
+--rename multiple tables with a pattern
+SET group_concat_max_len=5000;
+SELECT group_concat(v.name separator '; ')
+FROM (
+    SELECT concat('RENAME TABLE ', t.table_name, ' TO ', replace(t.table_name, 'PROD_', 'PP_')) name
+    FROM information_schema.tables t
+    WHERE table_schema = 'imdb_bulk' and table_name like 'PROD_%'
+) v; 
+     
+--analyze slow log
+pt-query-digest /usr/local/mysql/data/mysql-slow.log
+
+
+--mysqlbinlog
+mysqlbinlog --start-datetime="2022-04-20 10:00:00" --stop-datetime="2022-04-20 11:00:00" /usr/local/mysql/data/mysql-bin.123456 > /tmp/mysql-bin.123456.sql
+mysqlbinlog --start-position=xx  --stop-position=xx /usr/local/mysql/data/mysql-bin.123456 > /tmp/mysql-bin.123456.sql
+
+--*******************************************
+--dead lock, binlog_format, read_only, max_allowed_packet
+set global innodb_print_all_deadlocks=1;
+set global binlog_format = 'row'; 
+set global read_only = on;
+set global max_allowed_packet=1073741824;
+set global transaction isolation level read committed; --The default isolation level for InnoDB is REPEATABLE READ.
+set global max_connections = 1000; --SUPER privilege
+set global log_bin_trust_function_creators=1; --https://dev.mysql.com/doc/refman/8.0/en/stored-programs-logging.html
+set global sql_mode = 'TRADITIONAL';
+
+show global variables like '%xxxx%';
+SELECT @@global.sql_mode, @@session.sql_mode, @@sql_mode;
+
+
+--performance_schema
+select distinct(substring_index(name,'/',1)) as instrument_name, count(1) from performance_schema.setup_instruments group by instrument_name;
+
+
+--Configure time zone, restart MySQL
+[mysqld]
+default-time-zone = 'UTC'
+
+--Check MySQL time zone
+SELECT @@global.time_zone, @@session.time_zone,  @@system_time_zone;
+show variables like '%time_zone%';
+--*******************************************
